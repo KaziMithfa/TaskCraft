@@ -1,20 +1,41 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, replace, useLocation, useNavigate } from "react-router-dom";
 import bgimg from "../../assets/images/login.jpg";
 import logo from "../../assets/images/logo.png";
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import { AuthContext } from "../../providers/AuthProvider";
 import toast from "react-hot-toast";
+import axios from "axios";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { signIn, signInWithGoogle } = useContext(AuthContext);
+  const location = useLocation();
+
+  const from = location.state || "/";
+
+  const { signIn, signInWithGoogle, user, loading } = useContext(AuthContext);
+
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [navigate, user]);
 
   // Google Sign In
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      const { data } = await axios.post(
+        `${import.meta.env.VITE_API_URL}/jwt`,
+        {
+          email: result?.user?.email,
+        },
+        { withCredentials: true }
+      );
+
+      console.log(data);
+
       toast.success("sign in successfully");
-      navigate("/");
+      navigate(from, { replace: true });
     } catch (error) {
       console.log(error);
       toast.error(error?.message);
@@ -32,14 +53,26 @@ const Login = () => {
     try {
       // user login
       const result = await signIn(email, pass);
-      console.log(result);
-      navigate("/");
+
+      const { data } = await axios.post(
+        `${import.meta.env.VITE_API_URL}/jwt`,
+        {
+          email: result?.user?.email,
+        },
+        { withCredentials: true }
+      );
+
+      console.log(data);
+
+      navigate(from, { replace: true });
       toast.success("Sign in successfully");
     } catch (error) {
       console.log(error);
       toast.error(error?.message);
     }
   };
+
+  if (user || loading) return;
 
   return (
     <div className="flex justify-center items-center min-h-[calc(100vh-302px)] my-12">

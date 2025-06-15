@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 require("dotenv").config();
@@ -31,6 +33,35 @@ async function run() {
   try {
     const jobsCollection = client.db("soloSphere").collection("jobs");
     const bidsCollection = client.db("soloSphere").collection("bids");
+
+    // jwt generate
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "365d",
+      });
+
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+        })
+        .send({ success: true });
+    });
+
+    // clear token on logout
+
+    app.get("/logout", (req, res) => {
+      res
+        .clearCookie("token", {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+          maxAge: 0,
+        })
+        .send({ success: true });
+    });
 
     //await client.connect();
     // Send a ping to confirm a successful connection
@@ -96,6 +127,39 @@ async function run() {
       };
 
       const result = await jobsCollection.updateOne(query, updateDoc, options);
+      res.send(result);
+    });
+
+    // get all bids from a user by email from db
+
+    app.get("/my-bids/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const result = await bidsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // get all bid requests from db for job owner
+
+    app.get("/bid-requests/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { "buyer.email": email };
+      const result = await bidsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // Update Bid Status
+    app.patch("/bid/:id", async (req, res) => {
+      const id = req.params.id;
+      const status = req.body;
+
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: status,
+      };
+
+      const result = await bidsCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
 
