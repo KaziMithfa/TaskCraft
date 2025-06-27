@@ -18,6 +18,28 @@ const corsOptions = {
 // middleware
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
+
+//verify jwt middleware
+const verifyToken = (req, res, next) => {
+  const token = req.cookies?.token;
+
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+
+  if (token) {
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+      if (err) {
+        return res.status(401).send({ message: "unauthorized access" });
+      }
+
+      console.log(decoded);
+      req.user = decoded;
+      next();
+    });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.6salq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -29,6 +51,7 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
 async function run() {
   try {
     const jobsCollection = client.db("soloSphere").collection("jobs");
@@ -84,6 +107,20 @@ async function run() {
     // save a bid data in the database
     app.post("/bid", async (req, res) => {
       const bidData = req.body;
+
+      // check if its a duplicate request
+      const query = {
+        email: bidData.email,
+        jobId: bidData.jobId,
+      };
+
+      const alreadyApplied = await bidsCollection.findOne(query);
+      if (alreadyApplied) {
+        return res
+          .status(400)
+          .send("You have already applied placed a bid on this job");
+      }
+
       const result = await bidsCollection.insertOne(bidData);
       res.send(result);
     });
@@ -96,8 +133,14 @@ async function run() {
     });
 
     // get all job posted by any specific user
-    app.get("/jobs/:email", async (req, res) => {
+    app.get("/jobs/:email", verifyToken, async (req, res) => {
+      const tokenEmail = req.user.email;
       const email = req.params.email;
+
+      if (tokenEmail !== email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
       const query = { "buyer.email": email };
       const result = await jobsCollection.find(query).toArray();
       res.send(result);
@@ -141,7 +184,7 @@ async function run() {
 
     // get all bid requests from db for job owner
 
-    app.get("/bid-requests/:email", async (req, res) => {
+    app.get("/bid-requests/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       const query = { "buyer.email": email };
       const result = await bidsCollection.find(query).toArray();
@@ -161,6 +204,36 @@ async function run() {
 
       const result = await bidsCollection.updateOne(query, updatedDoc);
       res.send(result);
+    });
+
+    // get all jobs data for pagination
+    app.get("/all-jobs", async (req, res) => {
+      const size = parseInt(req.query.size);
+      const page = parseInt(req.query.page) - 1;
+      const filter = req.query.filter;
+
+      let query = {};
+      if (filter) query = { category: filter };
+
+      console.log(size, page);
+
+      const result = await jobsCollection
+        .find(query)
+        .skip(page * size)
+        .limit(size)
+        .toArray();
+      res.send(result);
+    });
+
+    // get all jobs data count for db
+    app.get("/jobs-count", async (req, res) => {
+      const filter = req.query.filter;
+
+      let query = {};
+      if (filter) query = { category: filter };
+
+      const count = await jobsCollection.countDocuments(query);
+      res.send({ count });
     });
 
     await client.db("admin").command({ ping: 1 });
