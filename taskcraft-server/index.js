@@ -211,14 +211,20 @@ async function run() {
       const size = parseInt(req.query.size);
       const page = parseInt(req.query.page) - 1;
       const filter = req.query.filter;
+      const sort = req.query.sort;
+      const search = req.query.search;
 
-      let query = {};
-      if (filter) query = { category: filter };
+      let query = {
+        job_title: { $regex: search, $options: "i" },
+      };
+      if (filter) query.category = filter;
+      let options = {};
+      if (sort) options = { sort: { deadline: sort === "asc" ? 1 : -1 } };
 
       console.log(size, page);
 
       const result = await jobsCollection
-        .find(query)
+        .find(query, options)
         .skip(page * size)
         .limit(size)
         .toArray();
@@ -228,9 +234,12 @@ async function run() {
     // get all jobs data count for db
     app.get("/jobs-count", async (req, res) => {
       const filter = req.query.filter;
+      const search = req.query.search;
 
-      let query = {};
-      if (filter) query = { category: filter };
+      let query = {
+        job_title: { $regex: search, $options: "i" },
+      };
+      if (filter) query.category = filter;
 
       const count = await jobsCollection.countDocuments(query);
       res.send({ count });
